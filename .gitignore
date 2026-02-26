@@ -4,3 +4,8 @@ Cargo.lock
 .vscode
 rust-toolchain.toml
 **.swp
+/mls-rs-uniffi/uniffi-bindgen/target
+/mls-rs-uniffi/uniffi-bindgen/jniLibs
+/mls-rs-uniffi/uniffi-bindgen/result
+.DS_Store
+/.claude
