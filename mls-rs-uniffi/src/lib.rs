@@ -36,7 +36,7 @@ use mls_rs::mls_rules;
 use mls_rs::{CipherSuiteProvider, CryptoProvider};
 use mls_rs_core::identity;
 use mls_rs_core::identity::{BasicCredential, IdentityProvider};
-use mls_rs_crypto_openssl::OpensslCryptoProvider;
+use mls_rs_crypto_rustcrypto::RustCryptoProvider;
 
 uniffi::setup_scaffolding!();
 
@@ -189,6 +189,61 @@ impl From<mls_rs::MlsMessage> for Message {
     }
 }
 
+impl Message {
+    pub(crate) fn as_inner(&self) -> &mls_rs::MlsMessage {
+        &self.inner
+    }
+
+    pub(crate) fn from_inner(inner: mls_rs::MlsMessage) -> Self {
+        Self { inner }
+    }
+}
+
+/// Serialize a message to MLS-encoded bytes.
+#[uniffi::export]
+pub fn message_to_bytes(msg: &Message) -> Result<Vec<u8>, Error> {
+    Ok(msg.as_inner().to_bytes()?)
+}
+
+/// Parse MLS-encoded bytes into a message.
+#[uniffi::export]
+pub fn message_from_bytes(data: Vec<u8>) -> Result<Message, Error> {
+    let inner = mls_rs::MlsMessage::from_bytes(&data)?;
+    Ok(Message::from_inner(inner))
+}
+
+#[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
+#[cfg_attr(mls_build_async, maybe_async::must_be_async)]
+#[uniffi::export]
+impl Message {
+    /// If this is a welcome message, return key package references of all members who can
+    /// join using this message.
+    pub fn welcome_key_package_references(&self) -> Vec<Vec<u8>> {
+        self.inner
+            .welcome_key_package_references()
+            .into_iter()
+            .map(|reference| reference.to_vec())
+            .collect()
+    }
+
+    /// If this is a key package, return its key package reference.
+    pub async fn key_package_reference(
+        &self,
+        cipher_suite: CipherSuite,
+    ) -> Result<Option<Vec<u8>>, Error> {
+        let crypto_provider = RustCryptoProvider::default();
+        let cipher_suite_provider = crypto_provider
+            .cipher_suite_provider(cipher_suite.into())
+            .ok_or(MlsError::UnsupportedCipherSuite(cipher_suite.into()))?;
+
+        let reference = self
+            .inner
+            .key_package_reference(&cipher_suite_provider)
+            .await?;
+        Ok(reference.map(|reference| reference.to_vec()))
+    }
+}
+
 #[derive(Clone, Debug, uniffi::Object)]
 pub struct Proposal {
     // FIXME: This isn't very useful because we get no details about the
@@ -300,7 +355,7 @@ impl TryFrom<mls_rs::CipherSuite> for CipherSuite {
 
 /// Generate a MLS signature keypair.
 ///
-/// This will use the default mls-lite crypto provider.
+/// This will use the default RustCrypto provider.
 ///
 /// See [`mls_rs::CipherSuiteProvider::signature_key_generate`]
 /// for details.
@@ -310,7 +365,7 @@ impl TryFrom<mls_rs::CipherSuite> for CipherSuite {
 pub async fn generate_signature_keypair(
     cipher_suite: CipherSuite,
 ) -> Result<SignatureKeypair, Error> {
-    let crypto_provider = mls_rs_crypto_openssl::OpensslCryptoProvider::default();
+    let crypto_provider = RustCryptoProvider::default();
     let cipher_suite_provider = crypto_provider
         .cipher_suite_provider(cipher_suite.into())
         .ok_or(MlsError::UnsupportedCipherSuite(cipher_suite.into()))?;
@@ -354,13 +409,13 @@ impl Client {
         let cipher_suite = signature_keypair.cipher_suite;
         let public_key = signature_keypair.public_key;
         let secret_key = signature_keypair.secret_key;
-        let crypto_provider = OpensslCryptoProvider::new();
+        let crypto_provider = RustCryptoProvider::new();
         let basic_credential = BasicCredential::new(id);
         let signing_identity =
             identity::SigningIdentity::new(basic_credential.into_credential(), public_key.into());
         let commit_options = mls_rules::CommitOptions::default()
             .with_ratchet_tree_extension(client_config.use_ratchet_tree_extension)
-            .with_single_welcome_message(true);
+            .with_single_welcome_message(false);
         let mls_rules = mls_rules::DefaultMlsRules::new().with_commit_options(commit_options);
         let client = mls_rs::Client::builder()
             .crypto_provider(crypto_provider)
@@ -492,6 +547,10 @@ pub struct CommitOutput {
     /// `None` if the commit did not add new members.
     pub welcome_message: Option<Arc<Message>>,
 
+    /// Welcome messages to send to new group members. This will be
+    /// empty if the commit did not add new members.
+    pub welcome_messages: Vec<Arc<Message>>,
+
     /// Ratchet tree that can be sent out of band if the ratchet tree
     /// extension is not used.
     pub ratchet_tree: Option<RatchetTree>,
@@ -508,11 +567,12 @@ impl TryFrom<mls_rs::group::CommitOutput> for CommitOutput {
 
     fn try_from(commit_output: mls_rs::group::CommitOutput) -> Result<Self, Error> {
         let commit_message = Arc::new(commit_output.commit_message.into());
-        let welcome_message = commit_output
+        let welcome_messages: Vec<Arc<Message>> = commit_output
             .welcome_messages
             .into_iter()
-            .next()
-            .map(|welcome_message| Arc::new(welcome_message.into()));
+            .map(|welcome_message| Arc::new(welcome_message.into()))
+            .collect();
+        let welcome_message = welcome_messages.first().cloned();
         let ratchet_tree = commit_output
             .ratchet_tree
             .map(TryInto::try_into)
@@ -524,6 +584,7 @@ impl TryFrom<mls_rs::group::CommitOutput> for CommitOutput {
         Ok(Self {
             commit_message,
             welcome_message,
+            welcome_messages,
             ratchet_tree,
             group_info,
         })
