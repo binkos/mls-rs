@@ -36,7 +36,7 @@ use mls_rs::mls_rules;
 use mls_rs::{CipherSuiteProvider, CryptoProvider};
 use mls_rs_core::identity;
 use mls_rs_core::identity::{BasicCredential, IdentityProvider};
-use mls_rs_crypto_rustcrypto::RustCryptoProvider;
+use mls_rs_crypto_cryptokit::CryptoKitProvider;
 
 uniffi::setup_scaffolding!();
 
@@ -242,7 +242,7 @@ impl Message {
         &self,
         cipher_suite: CipherSuite,
     ) -> Result<Option<Vec<u8>>, Error> {
-        let crypto_provider = RustCryptoProvider::default();
+        let crypto_provider = CryptoKitProvider::default();
         let cipher_suite_provider = crypto_provider
             .cipher_suite_provider(cipher_suite.into())
             .ok_or(MlsError::UnsupportedCipherSuite(cipher_suite.into()))?;
@@ -376,7 +376,7 @@ impl TryFrom<mls_rs::CipherSuite> for CipherSuite {
 pub async fn generate_signature_keypair(
     cipher_suite: CipherSuite,
 ) -> Result<SignatureKeypair, Error> {
-    let crypto_provider = RustCryptoProvider::default();
+    let crypto_provider = CryptoKitProvider::default();
     let cipher_suite_provider = crypto_provider
         .cipher_suite_provider(cipher_suite.into())
         .ok_or(MlsError::UnsupportedCipherSuite(cipher_suite.into()))?;
@@ -420,7 +420,7 @@ impl Client {
         let cipher_suite = signature_keypair.cipher_suite;
         let public_key = signature_keypair.public_key;
         let secret_key = signature_keypair.secret_key;
-        let crypto_provider = RustCryptoProvider::new();
+        let crypto_provider = CryptoKitProvider::default();
         let basic_credential = BasicCredential::new(id);
         let signing_identity =
             identity::SigningIdentity::new(basic_credential.into_credential(), public_key.into());

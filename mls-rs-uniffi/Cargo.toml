@@ -11,7 +11,7 @@ license = "Apache-2.0 OR MIT"
 rust-version = "1.82.0"
 
 [lib]
-crate-type = ["lib", "cdylib"]
+crate-type = ["staticlib"]
 name = "mls_rs_uniffi"
 
 [dependencies]
@@ -19,7 +19,7 @@ async-trait = "0.1.77"
 maybe-async = "0.2.10"
 mls-rs = { version = "0.53.0", path = "../mls-rs" }
 mls-rs-core = { version = "0.25.0", path = "../mls-rs-core" }
-mls-rs-crypto-rustcrypto = { version = "0.20.0", path = "../mls-rs-crypto-rustcrypto" }
+mls-rs-crypto-cryptokit = { version = "0.9.0", path = "../mls-rs-crypto-cryptokit" }
 thiserror = "2"
 uniffi = { version = "0.31" }
 zeroize = "1"
