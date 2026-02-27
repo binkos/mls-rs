@@ -71,9 +71,6 @@ mod swift {
 
     pub fn configure() {
         let swift_target_info = get_target_info();
-        if swift_target_info.target.libraries_require_rpath {
-            panic!("Libraries require RPath! Change minimum MacOS value to fix.")
-        }
 
         swift_target_info
             .paths
@@ -81,6 +78,9 @@ mod swift {
             .iter()
             .for_each(|path| {
                 println!("cargo:rustc-link-search=native={path}");
+                if swift_target_info.target.libraries_require_rpath {
+                    println!("cargo:rustc-link-arg=-Wl,-rpath,{path}");
+                }
             });
     }
 
