@@ -53,7 +53,7 @@ fn arc_unwrap_or_clone<T: Clone>(arc: Arc<T>) -> T {
 #[derive(Debug, thiserror::Error, uniffi::Error)]
 #[uniffi(flat_error)]
 #[non_exhaustive]
-pub enum Error {
+pub enum MlsRsError {
     #[error("A mls-rs error occurred: {inner}")]
     MlsError {
         #[from]
@@ -76,7 +76,7 @@ pub enum Error {
     },
 }
 
-impl IntoAnyError for Error {}
+impl IntoAnyError for MlsRsError {}
 
 /// A [`mls_rs::crypto::SignaturePublicKey`] wrapper.
 #[derive(Clone, Debug, uniffi::Record)]
@@ -167,7 +167,7 @@ pub enum ProtocolVersion {
 }
 
 impl TryFrom<mls_rs::ProtocolVersion> for ProtocolVersion {
-    type Error = Error;
+    type Error = MlsRsError;
 
     fn try_from(version: mls_rs::ProtocolVersion) -> Result<Self, Self::Error> {
         match version {
@@ -201,13 +201,13 @@ impl Message {
 
 /// Serialize a message to MLS-encoded bytes.
 #[uniffi::export]
-pub fn message_to_bytes(msg: &Message) -> Result<Vec<u8>, Error> {
+pub fn message_to_bytes(msg: &Message) -> Result<Vec<u8>, MlsRsError> {
     Ok(msg.as_inner().to_bytes()?)
 }
 
 /// Parse MLS-encoded bytes into a message.
 #[uniffi::export]
-pub fn message_from_bytes(data: Vec<u8>) -> Result<Message, Error> {
+pub fn message_from_bytes(data: Vec<u8>) -> Result<Message, MlsRsError> {
     let inner = mls_rs::MlsMessage::from_bytes(&data)?;
     Ok(Message::from_inner(inner))
 }
@@ -241,7 +241,7 @@ impl Message {
     pub async fn key_package_reference(
         &self,
         cipher_suite: CipherSuite,
-    ) -> Result<Option<Vec<u8>>, Error> {
+    ) -> Result<Option<Vec<u8>>, MlsRsError> {
         let crypto_provider = CryptoKitProvider::default();
         let cipher_suite_provider = crypto_provider
             .cipher_suite_provider(cipher_suite.into())
@@ -354,7 +354,7 @@ impl From<CipherSuite> for mls_rs::CipherSuite {
 }
 
 impl TryFrom<mls_rs::CipherSuite> for CipherSuite {
-    type Error = Error;
+    type Error = MlsRsError;
 
     fn try_from(cipher_suite: mls_rs::CipherSuite) -> Result<Self, Self::Error> {
         match cipher_suite {
@@ -375,7 +375,7 @@ impl TryFrom<mls_rs::CipherSuite> for CipherSuite {
 #[uniffi::export]
 pub async fn generate_signature_keypair(
     cipher_suite: CipherSuite,
-) -> Result<SignatureKeypair, Error> {
+) -> Result<SignatureKeypair, MlsRsError> {
     let crypto_provider = CryptoKitProvider::default();
     let cipher_suite_provider = crypto_provider
         .cipher_suite_provider(cipher_suite.into())
@@ -447,7 +447,7 @@ impl Client {
     ///
     /// See [`mls_rs::Client::generate_key_package_message`] for
     /// details.
-    pub async fn generate_key_package_message(&self) -> Result<Message, Error> {
+    pub async fn generate_key_package_message(&self) -> Result<Message, MlsRsError> {
         let message = self
             .inner
             .generate_key_package_message(Default::default(), Default::default(), None)
@@ -455,7 +455,7 @@ impl Client {
         Ok(message.into())
     }
 
-    pub fn signing_identity(&self) -> Result<Arc<SigningIdentity>, Error> {
+    pub fn signing_identity(&self) -> Result<Arc<SigningIdentity>, MlsRsError> {
         let (signing_identity, _) = self.inner.signing_identity()?;
         Ok(Arc::new(signing_identity.clone().into()))
     }
@@ -467,7 +467,7 @@ impl Client {
     ///
     /// See [`mls_rs::Client::create_group`] and
     /// [`mls_rs::Client::create_group_with_id`] for details.
-    pub async fn create_group(&self, group_id: Option<Vec<u8>>) -> Result<Group, Error> {
+    pub async fn create_group(&self, group_id: Option<Vec<u8>>) -> Result<Group, MlsRsError> {
         let extensions = mls_rs::ExtensionList::new();
         let inner = match group_id {
             Some(group_id) => {
@@ -496,7 +496,7 @@ impl Client {
         &self,
         ratchet_tree: Option<RatchetTree>,
         welcome_message: &Message,
-    ) -> Result<JoinInfo, Error> {
+    ) -> Result<JoinInfo, MlsRsError> {
         let ratchet_tree = ratchet_tree.map(TryInto::try_into).transpose()?;
         let (group, new_member_info) = self
             .inner
@@ -516,7 +516,7 @@ impl Client {
     /// Load an existing group.
     ///
     /// See [`mls_rs::Client::load_group`] for details.
-    pub async fn load_group(&self, group_id: Vec<u8>) -> Result<Group, Error> {
+    pub async fn load_group(&self, group_id: Vec<u8>) -> Result<Group, MlsRsError> {
         self.inner
             .load_group(&group_id)
             .await
@@ -533,18 +533,18 @@ pub struct RatchetTree {
 }
 
 impl TryFrom<mls_rs::group::ExportedTree<'_>> for RatchetTree {
-    type Error = Error;
+    type Error = MlsRsError;
 
-    fn try_from(exported_tree: mls_rs::group::ExportedTree<'_>) -> Result<Self, Error> {
+    fn try_from(exported_tree: mls_rs::group::ExportedTree<'_>) -> Result<Self, MlsRsError> {
         let bytes = exported_tree.to_bytes()?;
         Ok(Self { bytes })
     }
 }
 
 impl TryFrom<RatchetTree> for group::ExportedTree<'static> {
-    type Error = Error;
+    type Error = MlsRsError;
 
-    fn try_from(ratchet_tree: RatchetTree) -> Result<Self, Error> {
+    fn try_from(ratchet_tree: RatchetTree) -> Result<Self, MlsRsError> {
         group::ExportedTree::from_bytes(&ratchet_tree.bytes).map_err(Into::into)
     }
 }
@@ -574,9 +574,9 @@ pub struct CommitOutput {
 }
 
 impl TryFrom<mls_rs::group::CommitOutput> for CommitOutput {
-    type Error = Error;
+    type Error = MlsRsError;
 
-    fn try_from(commit_output: mls_rs::group::CommitOutput) -> Result<Self, Error> {
+    fn try_from(commit_output: mls_rs::group::CommitOutput) -> Result<Self, MlsRsError> {
         let commit_message = Arc::new(commit_output.commit_message.into());
         let welcome_messages: Vec<Arc<Message>> = commit_output
             .welcome_messages
@@ -643,7 +643,7 @@ impl Group {
 fn index_to_identity(
     group: &mls_rs::Group<UniFFIConfig>,
     index: u32,
-) -> Result<identity::SigningIdentity, Error> {
+) -> Result<identity::SigningIdentity, MlsRsError> {
     let member = group
         .member_at_index(index)
         .ok_or(MlsError::InvalidNodeIndex(index))?;
@@ -655,7 +655,7 @@ fn index_to_identity(
 #[cfg_attr(mls_build_async, maybe_async::must_be_async)]
 async fn signing_identity_to_identifier(
     signing_identity: &identity::SigningIdentity,
-) -> Result<Vec<u8>, Error> {
+) -> Result<Vec<u8>, MlsRsError> {
     let identifier = basic::BasicIdentityProvider::new()
         .identity(signing_identity, &mls_rs::ExtensionList::new())
         .await
@@ -675,7 +675,7 @@ impl Group {
 
     /// Write the current state of the group to storage defined by
     /// [`ClientConfig::group_state_storage`]
-    pub async fn write_to_storage(&self) -> Result<(), Error> {
+    pub async fn write_to_storage(&self) -> Result<(), MlsRsError> {
         let mut group = self.inner().await;
         group.write_to_storage().await.map_err(Into::into)
     }
@@ -685,7 +685,7 @@ impl Group {
     /// This function is used to provide the current group tree to new
     /// members when `use_ratchet_tree_extension` is set to false in
     /// `ClientConfig`.
-    pub async fn export_tree(&self) -> Result<RatchetTree, Error> {
+    pub async fn export_tree(&self) -> Result<RatchetTree, MlsRsError> {
         let group = self.inner().await;
         group.export_tree().try_into()
     }
@@ -697,7 +697,7 @@ impl Group {
     ///
     /// Returns the resulting commit message. See
     /// [`mls_rs::Group::commit`] for details.
-    pub async fn commit(&self) -> Result<CommitOutput, Error> {
+    pub async fn commit(&self) -> Result<CommitOutput, MlsRsError> {
         let mut group = self.inner().await;
         let commit_output = group.commit(Vec::new()).await?;
         commit_output.try_into()
@@ -712,7 +712,7 @@ impl Group {
     pub async fn add_members(
         &self,
         key_packages: Vec<Arc<Message>>,
-    ) -> Result<CommitOutput, Error> {
+    ) -> Result<CommitOutput, MlsRsError> {
         let mut group = self.inner().await;
         let mut commit_builder = group.commit_builder();
         for key_package in key_packages {
@@ -731,7 +731,7 @@ impl Group {
     pub async fn propose_add_members(
         &self,
         key_packages: Vec<Arc<Message>>,
-    ) -> Result<Vec<Arc<Message>>, Error> {
+    ) -> Result<Vec<Arc<Message>>, MlsRsError> {
         let mut group = self.inner().await;
 
         let mut messages = Vec::with_capacity(key_packages.len());
@@ -752,7 +752,7 @@ impl Group {
     pub async fn remove_members(
         &self,
         signing_identities: &[Arc<SigningIdentity>],
-    ) -> Result<CommitOutput, Error> {
+    ) -> Result<CommitOutput, MlsRsError> {
         let mut group = self.inner().await;
 
         // Find member indices
@@ -780,7 +780,7 @@ impl Group {
     pub async fn propose_remove_members(
         &self,
         signing_identities: &[Arc<SigningIdentity>],
-    ) -> Result<Vec<Arc<Message>>, Error> {
+    ) -> Result<Vec<Arc<Message>>, MlsRsError> {
         let mut group = self.inner().await;
 
         let mut messages = Vec::with_capacity(signing_identities.len());
@@ -805,7 +805,7 @@ impl Group {
     /// The other group members will find the message in
     /// [`ReceivedMessage::ApplicationMessage`] after calling
     /// [`Group::process_incoming_message`].
-    pub async fn encrypt_application_message(&self, message: &[u8]) -> Result<Message, Error> {
+    pub async fn encrypt_application_message(&self, message: &[u8]) -> Result<Message, MlsRsError> {
         let mut group = self.inner().await;
         let mls_message = group
             .encrypt_application_message(message, Vec::new())
@@ -817,7 +817,7 @@ impl Group {
     pub async fn process_incoming_message(
         &self,
         message: Arc<Message>,
-    ) -> Result<ReceivedMessage, Error> {
+    ) -> Result<ReceivedMessage, MlsRsError> {
         let message = arc_unwrap_or_clone(message);
         let mut group = self.inner().await;
         match group.process_incoming_message(message.inner).await? {
@@ -867,7 +867,7 @@ mod tests {
 
     #[test]
     #[cfg(not(mls_build_async))]
-    fn test_simple_scenario() -> Result<(), Error> {
+    fn test_simple_scenario() -> Result<(), MlsRsError> {
         #[derive(Debug, Default)]
         struct GroupStateData {
             state: Vec<u8>,
@@ -892,12 +892,12 @@ mod tests {
         }
 
         impl GroupStateStorage for CustomGroupStateStorage {
-            fn state(&self, group_id: Vec<u8>) -> Result<Option<Vec<u8>>, Error> {
+            fn state(&self, group_id: Vec<u8>) -> Result<Option<Vec<u8>>, MlsRsError> {
                 let groups = self.lock();
                 Ok(groups.get(&group_id).map(|group| group.state.clone()))
             }
 
-            fn epoch(&self, group_id: Vec<u8>, epoch_id: u64) -> Result<Option<Vec<u8>>, Error> {
+            fn epoch(&self, group_id: Vec<u8>, epoch_id: u64) -> Result<Option<Vec<u8>>, MlsRsError> {
                 let groups = self.lock();
                 match groups.get(&group_id) {
                     Some(group) => {
@@ -916,7 +916,7 @@ mod tests {
                 group_state: Vec<u8>,
                 epoch_inserts: Vec<EpochRecord>,
                 epoch_updates: Vec<EpochRecord>,
-            ) -> Result<(), Error> {
+            ) -> Result<(), MlsRsError> {
                 let mut groups = self.lock();
 
                 let group = groups.entry(group_id).or_default();
@@ -937,7 +937,7 @@ mod tests {
                 Ok(())
             }
 
-            fn max_epoch_id(&self, group_id: Vec<u8>) -> Result<Option<u64>, Error> {
+            fn max_epoch_id(&self, group_id: Vec<u8>) -> Result<Option<u64>, MlsRsError> {
                 let groups = self.lock();
                 Ok(groups
                     .get(&group_id)
@@ -983,7 +983,7 @@ mod tests {
 
     #[test]
     #[cfg(not(mls_build_async))]
-    fn test_ratchet_tree_not_included() -> Result<(), Error> {
+    fn test_ratchet_tree_not_included() -> Result<(), MlsRsError> {
         let alice_config = ClientConfig {
             use_ratchet_tree_extension: true,
             ..ClientConfig::default()
@@ -999,7 +999,7 @@ mod tests {
 
     #[test]
     #[cfg(not(mls_build_async))]
-    fn test_ratchet_tree_included() -> Result<(), Error> {
+    fn test_ratchet_tree_included() -> Result<(), MlsRsError> {
         let alice_config = ClientConfig {
             use_ratchet_tree_extension: false,
             ..ClientConfig::default()

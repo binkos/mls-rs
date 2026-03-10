@@ -5,7 +5,7 @@ use std::sync::Mutex;
 #[cfg(mls_build_async)]
 use tokio::sync::Mutex;
 
-use crate::Error;
+use crate::MlsRsError;
 
 // TODO(mulmarta): we'd like to use EpochRecord from mls-rs-core but
 // this breaks the Python tests because using two crates makes UniFFI
@@ -47,8 +47,8 @@ impl From<EpochRecord> for mls_rs_core::group::EpochRecord {
 #[cfg_attr(not(mls_build_async), uniffi::export(with_foreign))]
 pub trait GroupStateStorage: Send + Sync + Debug {
     // Uniffi doesn't support zeroizing
-    async fn state(&self, group_id: Vec<u8>) -> Result<Option<Vec<u8>>, Error>;
-    async fn epoch(&self, group_id: Vec<u8>, epoch_id: u64) -> Result<Option<Vec<u8>>, Error>;
+    async fn state(&self, group_id: Vec<u8>) -> Result<Option<Vec<u8>>, MlsRsError>;
+    async fn epoch(&self, group_id: Vec<u8>, epoch_id: u64) -> Result<Option<Vec<u8>>, MlsRsError>;
 
     async fn write(
         &self,
@@ -56,9 +56,9 @@ pub trait GroupStateStorage: Send + Sync + Debug {
         group_state: Vec<u8>,
         epoch_inserts: Vec<EpochRecord>,
         epoch_updates: Vec<EpochRecord>,
-    ) -> Result<(), Error>;
+    ) -> Result<(), MlsRsError>;
 
-    async fn max_epoch_id(&self, group_id: Vec<u8>) -> Result<Option<u64>, Error>;
+    async fn max_epoch_id(&self, group_id: Vec<u8>) -> Result<Option<u64>, MlsRsError>;
 }
 
 /// Adapt a mls-rs `GroupStateStorage` implementation.
@@ -92,7 +92,7 @@ where
     S: mls_rs::GroupStateStorage<Error = Err> + Debug,
     Err: IntoAnyError,
 {
-    async fn state(&self, group_id: Vec<u8>) -> Result<Option<Vec<u8>>, Error> {
+    async fn state(&self, group_id: Vec<u8>) -> Result<Option<Vec<u8>>, MlsRsError> {
         let data = self
             .inner()
             .await
@@ -103,7 +103,7 @@ where
         Ok(data.map(|data| data.to_vec()))
     }
 
-    async fn epoch(&self, group_id: Vec<u8>, epoch_id: u64) -> Result<Option<Vec<u8>>, Error> {
+    async fn epoch(&self, group_id: Vec<u8>, epoch_id: u64) -> Result<Option<Vec<u8>>, MlsRsError> {
         let data = self
             .inner()
             .await
@@ -120,7 +120,7 @@ where
         data: Vec<u8>,
         epoch_inserts: Vec<EpochRecord>,
         epoch_updates: Vec<EpochRecord>,
-    ) -> Result<(), Error> {
+    ) -> Result<(), MlsRsError> {
         self.inner()
             .await
             .write(
@@ -135,7 +135,7 @@ where
             .map_err(|err| err.into_any_error().into())
     }
 
-    async fn max_epoch_id(&self, group_id: Vec<u8>) -> Result<Option<u64>, Error> {
+    async fn max_epoch_id(&self, group_id: Vec<u8>) -> Result<Option<u64>, MlsRsError> {
         self.inner()
             .await
             .max_epoch_id(&group_id)
