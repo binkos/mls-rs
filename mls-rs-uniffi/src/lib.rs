@@ -212,6 +212,17 @@ pub fn message_from_bytes(data: Vec<u8>) -> Result<Message, Error> {
     Ok(Message::from_inner(inner))
 }
 
+#[uniffi::export]
+impl Message {
+    /// Return the epoch of this message, if available.
+    ///
+    /// Commit and application messages carry the epoch in which they were created.
+    /// Welcome and KeyPackage messages do not have an epoch and will return `None`.
+    pub fn epoch(&self) -> Option<u64> {
+        self.inner.epoch()
+    }
+}
+
 #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
 #[cfg_attr(mls_build_async, maybe_async::must_be_async)]
 #[uniffi::export]
