@@ -667,6 +667,12 @@ async fn signing_identity_to_identifier(
 #[cfg_attr(mls_build_async, maybe_async::must_be_async)]
 #[uniffi::export]
 impl Group {
+    /// Returns the group ID.
+    pub async fn group_id(&self) -> Vec<u8> {
+        let group = self.inner().await;
+        group.group_id().to_vec()
+    }
+
     /// Write the current state of the group to storage defined by
     /// [`ClientConfig::group_state_storage`]
     pub async fn write_to_storage(&self) -> Result<(), Error> {
