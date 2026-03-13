@@ -1,18 +1,21 @@
-use std::fmt::Debug;
 use std::sync::Arc;
 
 use mls_rs::{
-    client_builder::{self, WithGroupStateStorage},
+    client_builder::{self, WithGroupStateStorage, WithKeyPackageRepo},
     identity::basic,
-    storage_provider::in_memory::InMemoryGroupStateStorage,
+    storage_provider::in_memory::{InMemoryGroupStateStorage, InMemoryKeyPackageStorage},
 };
+use mls_rs_core::key_package::KeyPackageData;
+use mls_rs_core::mls_rs_codec::{MlsDecode, MlsEncode};
 use mls_rs_crypto_cryptokit::CryptoKitProvider;
 use zeroize::Zeroizing;
 
 use self::group_state::{GroupStateStorage, GroupStateStorageAdapter};
+use self::key_package::{KeyPackageStorage, KeyPackageStorageAdapter};
 use crate::MlsRsError;
 
 pub mod group_state;
+pub mod key_package;
 
 #[derive(Debug, Clone)]
 pub(crate) struct ClientGroupStorage(Arc<dyn GroupStateStorage>);
@@ -63,17 +66,59 @@ impl mls_rs_core::group::GroupStateStorage for ClientGroupStorage {
     }
 }
 
+#[derive(Debug, Clone)]
+pub(crate) struct ClientKeyPackageStorage(Arc<dyn KeyPackageStorage>);
+
+impl From<Arc<dyn KeyPackageStorage>> for ClientKeyPackageStorage {
+    fn from(value: Arc<dyn KeyPackageStorage>) -> Self {
+        Self(value)
+    }
+}
+
+#[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
+#[cfg_attr(mls_build_async, maybe_async::must_be_async)]
+impl mls_rs_core::key_package::KeyPackageStorage for ClientKeyPackageStorage {
+    type Error = MlsRsError;
+
+    async fn insert(&mut self, id: Vec<u8>, pkg: KeyPackageData) -> Result<(), Self::Error> {
+        let data = pkg.mls_encode_to_vec()?;
+        self.0.insert(id, data).await
+    }
+
+    async fn get(&self, id: &[u8]) -> Result<Option<KeyPackageData>, Self::Error> {
+        match self.0.get(id.to_vec()).await? {
+            Some(data) => {
+                let pkg = KeyPackageData::mls_decode(&mut &*data)?;
+                Ok(Some(pkg))
+            }
+            None => Ok(None),
+        }
+    }
+
+    async fn delete(&mut self, id: &[u8]) -> Result<(), Self::Error> {
+        self.0.delete(id.to_vec()).await
+    }
+}
+
 pub type UniFFIConfig = client_builder::WithIdentityProvider<
     basic::BasicIdentityProvider,
     client_builder::WithCryptoProvider<
         CryptoKitProvider,
-        WithGroupStateStorage<ClientGroupStorage, client_builder::BaseConfig>,
+        WithGroupStateStorage<
+            ClientGroupStorage,
+            WithKeyPackageRepo<ClientKeyPackageStorage, client_builder::BaseConfig>,
+        >,
     >,
 >;
 
+/// Client configuration using callback-based storage.
+///
+/// Group state is provided via the `group_state_storage` callback.
+/// Key packages are provided via the `key_package_storage` callback.
 #[derive(Debug, Clone, uniffi::Record)]
 pub struct ClientConfig {
     pub group_state_storage: Arc<dyn GroupStateStorage>,
+    pub key_package_storage: Arc<dyn KeyPackageStorage>,
     /// Use the ratchet tree extension. If this is false, then you
     /// must supply `ratchet_tree` out of band to clients.
     pub use_ratchet_tree_extension: bool,
@@ -84,6 +129,9 @@ impl Default for ClientConfig {
         Self {
             group_state_storage: Arc::new(GroupStateStorageAdapter::new(
                 InMemoryGroupStateStorage::new(),
+            )),
+            key_package_storage: Arc::new(KeyPackageStorageAdapter::new(
+                InMemoryKeyPackageStorage::default(),
             )),
             use_ratchet_tree_extension: true,
         }

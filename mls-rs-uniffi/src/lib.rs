@@ -74,6 +74,8 @@ pub enum MlsRsError {
         #[from]
         inner: uniffi::UnexpectedUniFFICallbackError,
     },
+    #[error("Storage error: {inner}")]
+    StorageError { inner: String },
 }
 
 impl IntoAnyError for MlsRsError {}
@@ -366,7 +368,7 @@ impl TryFrom<mls_rs::CipherSuite> for CipherSuite {
 
 /// Generate a MLS signature keypair.
 ///
-/// This will use the default RustCrypto provider.
+/// This will use the default CryptoKit provider.
 ///
 /// See [`mls_rs::CipherSuiteProvider::signature_key_generate`]
 /// for details.
@@ -401,21 +403,13 @@ pub struct Client {
     inner: mls_rs::client::Client<UniFFIConfig>,
 }
 
-#[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
-#[cfg_attr(mls_build_async, maybe_async::must_be_async)]
-#[uniffi::export]
 impl Client {
-    /// Create a new client.
-    ///
-    /// The user is identified by `id`, which will be used to create a
-    /// basic credential together with the signature keypair.
-    ///
-    /// See [`mls_rs::Client::builder`] for details.
-    #[uniffi::constructor]
-    pub fn new(
+    fn build_client(
         id: Vec<u8>,
         signature_keypair: SignatureKeypair,
-        client_config: ClientConfig,
+        use_ratchet_tree_extension: bool,
+        group_state_storage: config::ClientGroupStorage,
+        key_package_storage: config::ClientKeyPackageStorage,
     ) -> Self {
         let cipher_suite = signature_keypair.cipher_suite;
         let public_key = signature_keypair.public_key;
@@ -425,18 +419,88 @@ impl Client {
         let signing_identity =
             identity::SigningIdentity::new(basic_credential.into_credential(), public_key.into());
         let commit_options = mls_rules::CommitOptions::default()
-            .with_ratchet_tree_extension(client_config.use_ratchet_tree_extension)
+            .with_ratchet_tree_extension(use_ratchet_tree_extension)
             .with_single_welcome_message(false);
         let mls_rules = mls_rules::DefaultMlsRules::new().with_commit_options(commit_options);
         let client = mls_rs::Client::builder()
             .crypto_provider(crypto_provider)
             .identity_provider(basic::BasicIdentityProvider::new())
             .signing_identity(signing_identity, secret_key.into(), cipher_suite.into())
-            .group_state_storage(client_config.group_state_storage.into())
+            .key_package_repo(key_package_storage)
+            .group_state_storage(group_state_storage)
             .mls_rules(mls_rules)
             .build();
 
         Client { inner: client }
+    }
+}
+
+#[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
+#[cfg_attr(mls_build_async, maybe_async::must_be_async)]
+#[uniffi::export]
+impl Client {
+    /// Create a new client with callback-based storage.
+    ///
+    /// See [`mls_rs::Client::builder`] for details.
+    #[uniffi::constructor]
+    pub fn new(
+        id: Vec<u8>,
+        signature_keypair: SignatureKeypair,
+        client_config: ClientConfig,
+    ) -> Self {
+        Self::build_client(
+            id,
+            signature_keypair,
+            client_config.use_ratchet_tree_extension,
+            client_config.group_state_storage.into(),
+            client_config.key_package_storage.into(),
+        )
+    }
+
+    /// Create a new client with SQLite-based storage.
+    ///
+    /// Both group state and key package secrets are persisted in a
+    /// SQLite database at the given path, so they survive app restarts.
+    #[uniffi::constructor]
+    pub fn new_with_database(
+        id: Vec<u8>,
+        signature_keypair: SignatureKeypair,
+        database_path: String,
+        use_ratchet_tree_extension: bool,
+    ) -> Result<Self, MlsRsError> {
+        use config::group_state::GroupStateStorageAdapter;
+        use config::key_package::KeyPackageStorageAdapter;
+        use mls_rs_provider_sqlite::{
+            connection_strategy::FileConnectionStrategy, SqLiteDataStorageEngine,
+        };
+        use std::path::Path;
+
+        let strategy = FileConnectionStrategy::new(Path::new(&database_path));
+        let engine = SqLiteDataStorageEngine::new(strategy)
+            .map_err(|e| MlsRsError::StorageError { inner: e.to_string() })?;
+
+        let group_state_storage: Arc<dyn config::group_state::GroupStateStorage> = Arc::new(
+            GroupStateStorageAdapter::new(
+                engine
+                    .group_state_storage()
+                    .map_err(|e| MlsRsError::StorageError { inner: e.to_string() })?,
+            ),
+        );
+        let key_package_storage: Arc<dyn config::key_package::KeyPackageStorage> = Arc::new(
+            KeyPackageStorageAdapter::new(
+                engine
+                    .key_package_storage()
+                    .map_err(|e| MlsRsError::StorageError { inner: e.to_string() })?,
+            ),
+        );
+
+        Ok(Self::build_client(
+            id,
+            signature_keypair,
+            use_ratchet_tree_extension,
+            group_state_storage.into(),
+            key_package_storage.into(),
+        ))
     }
 
     /// Generate a new key package for this client.
