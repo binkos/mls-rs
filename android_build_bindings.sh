@@ -8,9 +8,15 @@ echo "Starting build process..."
 # Step 1: Change to the mls-rs-uniffi directory
 cd mls-rs-uniffi
 
-# Step 2: Build .so files for both ARM architectures
-echo "Building .so files for ARM architectures..."
-cargo ndk -t armeabi-v7a -t arm64-v8a -o uniffi-bindgen/jniLibs build --release
+# Step 2: Build .so files for Android ABIs (ARM + x86)
+echo "Building .so files for Android ABIs (ARM + x86)..."
+cargo ndk \
+  -t armeabi-v7a \
+  -t arm64-v8a \
+  -t x86 \
+  -t x86_64 \
+  -o uniffi-bindgen/jniLibs \
+  build --release
 
 # Step 3: Change to the uniffi-bindgen directory
 cd uniffi-bindgen
