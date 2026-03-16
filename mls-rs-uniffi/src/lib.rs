@@ -503,6 +503,7 @@ impl Client {
         ))
     }
 
+
     /// Generate a new key package for this client.
     ///
     /// The key package is represented in is MLS message form. It is
