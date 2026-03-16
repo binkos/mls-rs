@@ -1,0 +1,7 @@
+module mls_rs_uniffiFFI {
+    header "mls_rs_uniffiFFI.h"
+    export *
+    use "Darwin"
+    use "_Builtin_stdbool"
+    use "_Builtin_stdint"
+}

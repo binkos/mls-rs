@@ -1,0 +1,4 @@
+module mls_rs_uniffiFFI {
+    header "mls_rs_uniffiFFI.h"
+    export *
+}
