@@ -74,8 +74,6 @@ pub enum Error {
         #[from]
         inner: uniffi::UnexpectedUniFFICallbackError,
     },
-    #[error("Storage error: {inner}")]
-    StorageError { inner: String },
 }
 
 impl IntoAnyError for Error {}
@@ -444,52 +442,6 @@ impl Client {
             client_config.group_state_storage.into(),
             client_config.key_package_storage.into(),
         )
-    }
-
-    /// Create a new client with SQLite-based storage.
-    ///
-    /// Both group state and key package secrets are persisted in a
-    /// SQLite database at the given path, so they survive app restarts.
-    #[uniffi::constructor]
-    pub fn new_with_database(
-        id: Vec<u8>,
-        signature_keypair: SignatureKeypair,
-        database_path: String,
-        use_ratchet_tree_extension: bool,
-    ) -> Result<Self, Error> {
-        use config::group_state::GroupStateStorageAdapter;
-        use config::key_package::KeyPackageStorageAdapter;
-        use mls_rs_provider_sqlite::{
-            connection_strategy::FileConnectionStrategy, SqLiteDataStorageEngine,
-        };
-        use std::path::Path;
-
-        let strategy = FileConnectionStrategy::new(Path::new(&database_path));
-        let engine = SqLiteDataStorageEngine::new(strategy)
-            .map_err(|e| Error::StorageError { inner: e.to_string() })?;
-
-        let group_state_storage: Arc<dyn config::group_state::GroupStateStorage> = Arc::new(
-            GroupStateStorageAdapter::new(
-                engine
-                    .group_state_storage()
-                    .map_err(|e| Error::StorageError { inner: e.to_string() })?,
-            ),
-        );
-        let key_package_storage: Arc<dyn config::key_package::KeyPackageStorage> = Arc::new(
-            KeyPackageStorageAdapter::new(
-                engine
-                    .key_package_storage()
-                    .map_err(|e| Error::StorageError { inner: e.to_string() })?,
-            ),
-        );
-
-        Ok(Self::build_client(
-            id,
-            signature_keypair,
-            use_ratchet_tree_extension,
-            group_state_storage.into(),
-            key_package_storage.into(),
-        ))
     }
 
     /// Generate a new key package for this client.
