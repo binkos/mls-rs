@@ -689,6 +689,12 @@ impl Group {
         group.group_id().to_vec()
     }
 
+    /// Returns the current epoch of the group.
+    pub async fn current_epoch(&self) -> u64 {
+        let group = self.inner().await;
+        group.current_epoch()
+    }
+
     /// Write the current state of the group to storage defined by
     /// [`ClientConfig::group_state_storage`]
     pub async fn write_to_storage(&self) -> Result<(), Error> {
