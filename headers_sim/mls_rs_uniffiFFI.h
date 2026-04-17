@@ -420,6 +420,11 @@ RustBuffer uniffi_mls_rs_uniffi_fn_method_group_export_tree(uint64_t ptr, RustCa
 RustBuffer uniffi_mls_rs_uniffi_fn_method_group_group_id(uint64_t ptr, RustCallStatus *_Nonnull out_status
 );
 #endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_MLS_RS_UNIFFI_FN_METHOD_GROUP_MEMBERS
+#define UNIFFI_FFIDEF_UNIFFI_MLS_RS_UNIFFI_FN_METHOD_GROUP_MEMBERS
+RustBuffer uniffi_mls_rs_uniffi_fn_method_group_members(uint64_t ptr, RustCallStatus *_Nonnull out_status
+);
+#endif
 #ifndef UNIFFI_FFIDEF_UNIFFI_MLS_RS_UNIFFI_FN_METHOD_GROUP_PROCESS_INCOMING_MESSAGE
 #define UNIFFI_FFIDEF_UNIFFI_MLS_RS_UNIFFI_FN_METHOD_GROUP_PROCESS_INCOMING_MESSAGE
 RustBuffer uniffi_mls_rs_uniffi_fn_method_group_process_incoming_message(uint64_t ptr, uint64_t message, RustCallStatus *_Nonnull out_status
@@ -933,6 +938,12 @@ uint16_t uniffi_mls_rs_uniffi_checksum_method_group_export_tree(void
 #ifndef UNIFFI_FFIDEF_UNIFFI_MLS_RS_UNIFFI_CHECKSUM_METHOD_GROUP_GROUP_ID
 #define UNIFFI_FFIDEF_UNIFFI_MLS_RS_UNIFFI_CHECKSUM_METHOD_GROUP_GROUP_ID
 uint16_t uniffi_mls_rs_uniffi_checksum_method_group_group_id(void
+    
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_MLS_RS_UNIFFI_CHECKSUM_METHOD_GROUP_MEMBERS
+#define UNIFFI_FFIDEF_UNIFFI_MLS_RS_UNIFFI_CHECKSUM_METHOD_GROUP_MEMBERS
+uint16_t uniffi_mls_rs_uniffi_checksum_method_group_members(void
     
 );
 #endif

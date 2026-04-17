@@ -679,6 +679,14 @@ impl From<identity::SigningIdentity> for SigningIdentity {
     }
 }
 
+#[derive(Clone, Debug, uniffi::Record)]
+pub struct GroupMemberInfo {
+    pub index: u32,
+    pub signing_identity: Arc<SigningIdentity>,
+    pub identifier: Vec<u8>,
+    pub signature_public_key: SignaturePublicKey,
+}
+
 /// An MLS end-to-end encrypted group.
 ///
 /// The group is used to send and process incoming messages and to
@@ -730,6 +738,19 @@ async fn signing_identity_to_identifier(
 
 #[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
 #[cfg_attr(mls_build_async, maybe_async::must_be_async)]
+async fn member_to_info(member: mls_rs::group::Member) -> Result<GroupMemberInfo, MlsRsError> {
+    let identifier = signing_identity_to_identifier(&member.signing_identity).await?;
+
+    Ok(GroupMemberInfo {
+        index: member.index,
+        signature_public_key: member.signing_identity.signature_key.clone().into(),
+        signing_identity: Arc::new(member.signing_identity.into()),
+        identifier,
+    })
+}
+
+#[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
+#[cfg_attr(mls_build_async, maybe_async::must_be_async)]
 #[uniffi::export]
 impl Group {
     /// Returns the group ID.
@@ -742,6 +763,21 @@ impl Group {
     pub async fn current_epoch(&self) -> u64 {
         let group = self.inner().await;
         group.current_epoch()
+    }
+
+    /// Returns the current group members with inspectable identity metadata.
+    pub async fn members(&self) -> Result<Vec<GroupMemberInfo>, MlsRsError> {
+        let members = {
+            let group = self.inner().await;
+            group.roster().members()
+        };
+
+        let mut member_infos = Vec::with_capacity(members.len());
+        for member in members {
+            member_infos.push(member_to_info(member).await?);
+        }
+
+        Ok(member_infos)
     }
 
     /// Write the current state of the group to storage defined by
@@ -1085,6 +1121,59 @@ mod tests {
         group.inner().apply_pending_commit()?;
 
         assert_eq!(ratchet_tree, group.inner().export_tree());
+        Ok(())
+    }
+
+    #[test]
+    #[cfg(not(mls_build_async))]
+    fn test_members_exposes_identifier_metadata() -> Result<(), Error> {
+        let owner_keypair = generate_signature_keypair(CipherSuite::Curve25519Aes128)?;
+        let owner = Client::new(
+            b"v1:1:owner".to_vec(),
+            owner_keypair,
+            ClientConfig::default(),
+        );
+
+        let device_a_keypair = generate_signature_keypair(CipherSuite::Curve25519Aes128)?;
+        let device_a = Client::new(
+            b"v1:1:device-a".to_vec(),
+            device_a_keypair,
+            ClientConfig::default(),
+        );
+
+        let device_b_keypair = generate_signature_keypair(CipherSuite::Curve25519Aes128)?;
+        let device_b = Client::new(
+            b"v1:1:device-b".to_vec(),
+            device_b_keypair,
+            ClientConfig::default(),
+        );
+
+        let group = owner.create_group(None)?;
+        let add_output = group.add_members(vec![
+            Arc::new(device_a.generate_key_package_message()?),
+            Arc::new(device_b.generate_key_package_message()?),
+        ])?;
+        group.process_incoming_message(add_output.commit_message)?;
+
+        let mut identifiers: Vec<Vec<u8>> = group
+            .members()?
+            .into_iter()
+            .map(|member| {
+                assert!(!member.signature_public_key.bytes.is_empty());
+                member.identifier
+            })
+            .collect();
+        identifiers.sort();
+
+        assert_eq!(
+            identifiers,
+            vec![
+                b"v1:1:device-a".to_vec(),
+                b"v1:1:device-b".to_vec(),
+                b"v1:1:owner".to_vec(),
+            ]
+        );
+
         Ok(())
     }
 }

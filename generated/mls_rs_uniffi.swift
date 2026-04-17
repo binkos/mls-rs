@@ -425,6 +425,22 @@ private let UNIFFI_CALLBACK_UNEXPECTED_ERROR: Int32 = 2
 #if swift(>=5.8)
 @_documentation(visibility: private)
 #endif
+fileprivate struct FfiConverterUInt32: FfiConverterPrimitive {
+    typealias FfiType = UInt32
+    typealias SwiftType = UInt32
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> UInt32 {
+        return try lift(readInt(&buf))
+    }
+
+    public static func write(_ value: SwiftType, into buf: inout [UInt8]) {
+        writeInt(&buf, lower(value))
+    }
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
 fileprivate struct FfiConverterUInt64: FfiConverterPrimitive {
     typealias FfiType = UInt64
     typealias SwiftType = UInt64
@@ -1080,6 +1096,11 @@ public protocol GroupProtocol: AnyObject, Sendable {
     func groupId()  -> Data
     
     /**
+     * Returns the current group members with inspectable identity metadata.
+     */
+    func members() throws  -> [GroupMemberInfo]
+    
+    /**
      * Process an inbound message for this group.
      */
     func processIncomingMessage(message: Message) throws  -> ReceivedMessage
@@ -1269,6 +1290,17 @@ open func exportTree()throws  -> RatchetTree  {
 open func groupId() -> Data  {
     return try!  FfiConverterData.lift(try! rustCall() {
     uniffi_mls_rs_uniffi_fn_method_group_group_id(
+            self.uniffiCloneHandle(),$0
+    )
+})
+}
+    
+    /**
+     * Returns the current group members with inspectable identity metadata.
+     */
+open func members()throws  -> [GroupMemberInfo]  {
+    return try  FfiConverterSequenceTypeGroupMemberInfo.lift(try rustCallWithError(FfiConverterTypeMlsRsError_lift) {
+    uniffi_mls_rs_uniffi_fn_method_group_members(
             self.uniffiCloneHandle(),$0
     )
 })
@@ -2601,6 +2633,68 @@ public func FfiConverterTypeEpochRecord_lower(_ value: EpochRecord) -> RustBuffe
 }
 
 
+public struct GroupMemberInfo {
+    public var index: UInt32
+    public var signingIdentity: SigningIdentity
+    public var identifier: Data
+    public var signaturePublicKey: SignaturePublicKey
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(index: UInt32, signingIdentity: SigningIdentity, identifier: Data, signaturePublicKey: SignaturePublicKey) {
+        self.index = index
+        self.signingIdentity = signingIdentity
+        self.identifier = identifier
+        self.signaturePublicKey = signaturePublicKey
+    }
+
+    
+
+    
+}
+
+#if compiler(>=6)
+extension GroupMemberInfo: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeGroupMemberInfo: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> GroupMemberInfo {
+        return
+            try GroupMemberInfo(
+                index: FfiConverterUInt32.read(from: &buf), 
+                signingIdentity: FfiConverterTypeSigningIdentity.read(from: &buf), 
+                identifier: FfiConverterData.read(from: &buf), 
+                signaturePublicKey: FfiConverterTypeSignaturePublicKey.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: GroupMemberInfo, into buf: inout [UInt8]) {
+        FfiConverterUInt32.write(value.index, into: &buf)
+        FfiConverterTypeSigningIdentity.write(value.signingIdentity, into: &buf)
+        FfiConverterData.write(value.identifier, into: &buf)
+        FfiConverterTypeSignaturePublicKey.write(value.signaturePublicKey, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeGroupMemberInfo_lift(_ buf: RustBuffer) throws -> GroupMemberInfo {
+    return try FfiConverterTypeGroupMemberInfo.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeGroupMemberInfo_lower(_ value: GroupMemberInfo) -> RustBuffer {
+    return FfiConverterTypeGroupMemberInfo.lower(value)
+}
+
+
 /**
  * A [`mls_rs::Group`] and [`mls_rs::group::NewMemberInfo`] wrapper.
  */
@@ -3552,6 +3646,31 @@ fileprivate struct FfiConverterSequenceTypeEpochRecord: FfiConverterRustBuffer {
         return seq
     }
 }
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+fileprivate struct FfiConverterSequenceTypeGroupMemberInfo: FfiConverterRustBuffer {
+    typealias SwiftType = [GroupMemberInfo]
+
+    public static func write(_ value: [GroupMemberInfo], into buf: inout [UInt8]) {
+        let len = Int32(value.count)
+        writeInt(&buf, len)
+        for item in value {
+            FfiConverterTypeGroupMemberInfo.write(item, into: &buf)
+        }
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> [GroupMemberInfo] {
+        let len: Int32 = try readInt(&buf)
+        var seq = [GroupMemberInfo]()
+        seq.reserveCapacity(Int(len))
+        for _ in 0 ..< len {
+            seq.append(try FfiConverterTypeGroupMemberInfo.read(from: &buf))
+        }
+        return seq
+    }
+}
 /**
  * Generate a MLS signature keypair.
  *
@@ -3655,6 +3774,9 @@ private let initializationResult: InitializationResult = {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_mls_rs_uniffi_checksum_method_group_group_id() != 55077) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_mls_rs_uniffi_checksum_method_group_members() != 990) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_mls_rs_uniffi_checksum_method_group_process_incoming_message() != 58304) {
