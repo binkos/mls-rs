@@ -21,7 +21,7 @@ mls-rs = { version = "0.53.0", path = "../mls-rs" }
 mls-rs-core = { version = "0.25.0", path = "../mls-rs-core" }
 mls-rs-crypto-rustcrypto = { version = "0.20.0", path = "../mls-rs-crypto-rustcrypto" }
 thiserror = "2"
-uniffi = { git = "https://github.com/mozilla/uniffi-rs/", rev = "309762f", version = "0.31.0", }
+uniffi = { git = "https://github.com/mozilla/uniffi-rs/", rev = "309762f", version = "0.31.0" }
 zeroize = "1"
 
 [target.'cfg(mls_build_async)'.dependencies]
