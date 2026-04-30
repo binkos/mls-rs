@@ -663,6 +663,96 @@ impl Group {
     }
 }
 
+enum PendingCommitAction {
+    Add(mls_rs::MlsMessage),
+    Remove(identity::SigningIdentity),
+}
+
+#[derive(uniffi::Object)]
+pub struct CommitBuilder {
+    group: Group,
+    actions: std::sync::Mutex<Vec<PendingCommitAction>>,
+}
+
+#[cfg_attr(not(mls_build_async), maybe_async::must_be_sync)]
+#[cfg_attr(mls_build_async, maybe_async::must_be_async)]
+#[uniffi::export]
+impl CommitBuilder {
+    pub fn add_member(&self, key_package: Arc<Message>) -> Result<(), Error> {
+        let message = arc_unwrap_or_clone(key_package).inner;
+        self.actions
+            .lock()
+            .unwrap()
+            .push(PendingCommitAction::Add(message));
+        Ok(())
+    }
+
+    pub fn remove_member(&self, signing_identity: Arc<SigningIdentity>) -> Result<(), Error> {
+        let identity = arc_unwrap_or_clone(signing_identity).inner;
+        self.actions
+            .lock()
+            .unwrap()
+            .push(PendingCommitAction::Remove(identity));
+        Ok(())
+    }
+
+    pub fn add_members(&self, key_packages: Vec<Arc<Message>>) -> Result<(), Error> {
+        let mut actions = self.actions.lock().unwrap();
+        for key_package in key_packages {
+            let message = arc_unwrap_or_clone(key_package).inner;
+            actions.push(PendingCommitAction::Add(message));
+        }
+        Ok(())
+    }
+
+    pub fn remove_members(&self, signing_identities: Vec<Arc<SigningIdentity>>) -> Result<(), Error> {
+        let mut actions = self.actions.lock().unwrap();
+        for signing_identity in signing_identities {
+            let identity = arc_unwrap_or_clone(signing_identity).inner;
+            actions.push(PendingCommitAction::Remove(identity));
+        }
+        Ok(())
+    }
+
+    pub async fn build(&self) -> Result<CommitOutput, Error> {
+        let actions: Vec<PendingCommitAction> = {
+            let mut guard = self.actions.lock().unwrap();
+            std::mem::take(&mut *guard)
+        };
+        let mut group = self.group.inner().await;
+
+        let mut remove_indices = Vec::new();
+        let mut add_key_packages = Vec::new();
+
+        for action in actions {
+            match action {
+                PendingCommitAction::Add(key_package) => {
+                    add_key_packages.push(key_package);
+                }
+                PendingCommitAction::Remove(signing_identity) => {
+                    let identifier =
+                        signing_identity_to_identifier(&signing_identity).await?;
+                    let member = group.member_with_identity(&identifier).await?;
+                    remove_indices.push(member.index);
+                }
+            }
+        }
+
+        let mut commit_builder = group.commit_builder();
+
+        for key_package in add_key_packages {
+            commit_builder = commit_builder.add_member(key_package)?;
+        }
+
+        for index in remove_indices {
+            commit_builder = commit_builder.remove_member(index)?;
+        }
+
+        let commit_output = commit_builder.build().await?;
+        commit_output.try_into()
+    }
+}
+
 /// Find the identity for the member with a given index.
 fn index_to_identity(
     group: &mls_rs::Group<UniFFIConfig>,
@@ -759,6 +849,26 @@ impl Group {
         let mut group = self.inner().await;
         let commit_output = group.commit(Vec::new()).await?;
         commit_output.try_into()
+    }
+
+    /// Clear the currently pending commit.
+    ///
+    /// This is useful when a commit was created but should be discarded
+    /// without applying it.
+    pub async fn clear_pending_commit(&self) {
+        let mut group = self.inner().await;
+        group.clear_pending_commit();
+    }
+
+    /// Create a [`CommitBuilder`] for this group.
+    ///
+    /// The builder can be used to queue multiple operations (add and
+    /// remove members) and commit them in a single commit.
+    pub fn commit_builder(&self) -> Arc<CommitBuilder> {
+        Arc::new(CommitBuilder {
+            group: self.clone(),
+            actions: std::sync::Mutex::new(Vec::new()),
+        })
     }
 
     /// Commit the addition of one or more members.
